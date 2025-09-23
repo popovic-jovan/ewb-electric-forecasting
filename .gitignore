@@ -1,49 +1,79 @@
-# Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
-*.pyo
-*.so
-.build/
-dist/
+*$py.class
+
+# Build artifacts
 build/
+dist/
+.eggs/
 *.egg-info/
 pip-wheel-metadata/
-.venv/
-env/
-venv/
-.python-version
+*.egg
+.installed.cfg
+.Python
 
-# Testing & tooling
+# Virtual environments & package managers
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+.pdm-python
+.pdm-build/
+.pixi/
+
+# Tooling caches & test output
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .cache/
+.tox/
+.nox/
+.hypothesis/
+.pybuilder/
 .coverage
+.coverage.*
 htmlcov/
+cover/
+coverage.xml
+nosetests.xml
 
-# Notebooks / editors
-.ipynb_checkpoints/
+# Editors / IDE settings
 .vscode/
 .idea/
 *.code-workspace
 *.swp
 *.swo
+.spyderproject
+.spyproject
+.ipynb_checkpoints/
 
-# OS
+# OS artifacts
 .DS_Store
 Thumbs.db
 
-# Data & artifacts
+# Data & model artifacts
 _merged_output/
 sarimax_weather_out/
 sarimax_out/
 baseline_future_forecast.csv
-*.parquet
-*.csv
+sarimax_preds_*.csv
+sarimax_meta_*.json
 *.log
 *.png
 
-# Secrets/config
+# Secrets / local config
 *.env
+.envrc
 *.pem
 config/*.local
+instance/
+.webassets-cache
+local_settings.py
+
+# SQLite / lightweight DB files
+db.sqlite3
+db.sqlite3-journal
