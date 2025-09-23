@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+.build/
+dist/
+build/
+*.egg-info/
+pip-wheel-metadata/
+.venv/
+env/
+venv/
+.python-version
+
+# Testing & tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+htmlcov/
+
+# Notebooks / editors
+.ipynb_checkpoints/
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data & artifacts
+_merged_output/
+sarimax_weather_out/
+sarimax_out/
+baseline_future_forecast.csv
+*.parquet
+*.csv
+*.log
+*.png
+
+# Secrets/config
+*.env
+*.pem
+config/*.local
