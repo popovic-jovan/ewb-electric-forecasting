@@ -27,9 +27,9 @@ except ImportError:
     from output_utils import prepare_run_directory
 
 
-DEFAULT_DATA_PATH = Path("model_datasets/dataset_timeseries.csv")
+DEFAULT_DATA_PATH = Path("model_datasets/dataset_sarima.csv")
 DEFAULT_TIMESTAMP = "timestamp"
-DEFAULT_TARGET = "delivered_value"
+DEFAULT_TARGET = "y"
 DEFAULT_METER_COL = "meter_ui"
 DEFAULT_OUTPUT_DIR = Path("models/sarima")
 
@@ -302,7 +302,7 @@ def run_series(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fast SARIMA trainer with simple grid-search.")
-    parser.add_argument("--data-path", type=Path, default=DEFAULT_DATA_PATH, help="Path to dataset_timeseries.csv")
+    parser.add_argument("--data-path", type=Path, default=DEFAULT_DATA_PATH, help="Path to dataset_sarima.csv")
     parser.add_argument("--timestamp", default=DEFAULT_TIMESTAMP, help="Timestamp column name")
     parser.add_argument("--target", default=DEFAULT_TARGET, help="Target column name")
     parser.add_argument("--meter-column", default=DEFAULT_METER_COL, help="Meter identifier column")

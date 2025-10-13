@@ -22,8 +22,8 @@ try:
 except ImportError:  # pragma: no cover - fallback when run as script
     from output_utils import prepare_run_directory
 
-DATA_FILE = "model_datasets/dataset_ml.csv"
-TARGET = "delivered_value"
+DATA_FILE = "model_datasets/dataset_xgboost.csv"
+TARGET = "y"
 TIMESTAMP = "timestamp"
 METER_COLUMN = "meter_ui"
 DEFAULT_OUTPUT_DIR = Path("models/xgboost")

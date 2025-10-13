@@ -586,6 +586,11 @@ def parse_args() -> argparse.Namespace:
         help="Number of meters to display in ranked summary charts (default: 15).",
     )
     parser.add_argument(
+        "--meter-only",
+        action="store_true",
+        help="Skip global summary printouts when focusing on a specific meter.",
+    )
+    parser.add_argument(
         "--no-optimized-dtypes",
         action="store_true",
         help="Disable dtype optimisation on load (falls back to pandas defaults).",
@@ -608,19 +613,20 @@ def main() -> Tuple[pd.DataFrame, Optional[Dict[str, pd.DataFrame]]]:
         summary.to_csv(summary_path)
         print(f"Exported per-meter summary to {summary_path}")
 
-    print(
-        summary[
-            [
-                "observation_count",
-                "delivered_mean",
-                "delivered_vs_peers_pct",
-                "power_zero_pct",
-                "coverage_pct",
+    if not args.meter_only:
+        print(
+            summary[
+                [
+                    "observation_count",
+                    "delivered_mean",
+                    "delivered_vs_peers_pct",
+                    "power_zero_pct",
+                    "coverage_pct",
+                ]
             ]
-        ]
-        .sort_values("delivered_mean", ascending=False)
-        .head(10)
-    )
+            .sort_values("delivered_mean", ascending=False)
+            .head(10)
+        )
 
     if args.summary_plots or args.export_summary_plots:
         output_dir = args.output_dir if args.export_summary_plots else None

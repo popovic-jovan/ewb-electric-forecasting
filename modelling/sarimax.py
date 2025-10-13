@@ -1,7 +1,7 @@
 # train_sarimax.py
 # -------------------------------------------
 # SARIMAX with grid search on hourly electricity data (per meter).
-# Exogenous regressors: weather + calendar/cyclical features from dataset_timeseries.csv
+# Exogenous regressors: weather + calendar/cyclical features from dataset_sarimax.csv
 #
 # Usage:
 #   python train_sarimax.py --meter M1 --val_hours 336 --save_model --run_name m1
@@ -33,8 +33,8 @@ except ImportError:  # pragma: no cover - fallback when run as script
 # -----------------------------
 # Config
 # -----------------------------
-DATA_FILE = "model_datasets/dataset_timeseries.csv"
-TARGET = "delivered_value"
+DATA_FILE = "model_datasets/dataset_sarimax.csv"
+TARGET = "y"
 TIMESTAMP = "timestamp"
 ID_COLS_CANDIDATES = ["meter_ui", "nmi_ui"]
 
@@ -54,12 +54,19 @@ EXOG_CANDIDATES = [
     # calendar & cyclical
     "hour_sin", "hour_cos", "month_sin", "month_cos", "dow_sin", "dow_cos",
     "is_weekend", "is_holiday_wa", "is_night", "is_peak_5to9pm",
-    "hour", "month", "dow",
-    # weather & derivatives
-    "maximum_temperature_degree_c", "minimum_temperature_degree_c",
-    "rainfall_amount_millimetres", "daily_global_solar_exposure_mj_m_m",
-    "temp_mean", "temp_range", "is_hot_day", "is_cold_night",
+    "hour_temp_weight",
+    # weather & engineered features
+    "temp_mean", "temp_range",
+    "temp_mean_smooth", "temp_range_smooth",
+    "temp_mean_lag_1", "temp_mean_lag_24",
+    "temp_range_lag_1", "temp_range_lag_24",
     "CDH", "HDH",
+    "CDH_lag_1", "CDH_lag_24",
+    "HDH_lag_1", "HDH_lag_24",
+    "rain_log1p", "rain_log1p_smooth",
+    "rain_log1p_lag_1", "rain_log1p_lag_24",
+    "solar_log1p", "solar_log1p_smooth",
+    "solar_log1p_lag_1", "solar_log1p_lag_24",
 ]
 
 DEFAULT_OUTPUT_DIR = Path("models/sarimax")
@@ -428,7 +435,7 @@ def train_for_meter(df_all, meter_col, meter_value, val_hours, outdir, save_mode
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser(description="SARIMAX grid-search trainer (per meter).")
-    parser.add_argument("--data", type=Path, default=Path(DATA_FILE), help="Path to dataset_timeseries.csv")
+    parser.add_argument("--data", type=Path, default=Path(DATA_FILE), help="Path to dataset_sarimax.csv")
     parser.add_argument("--meter", type=str, default="M1",
                         help="Meter ID to train (e.g., M1). Use 'ALL' to loop all meters.")
     parser.add_argument("--val_hours", type=int, default=14*24, help="Validation window (hours). Default 14 days.")
