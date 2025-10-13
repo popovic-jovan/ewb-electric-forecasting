@@ -3,5 +3,9 @@ plotly
 pandas
 numpy
 pyarrow
-scikit-learn
+scikit-learn>=0.24
 openpyxl
+statsmodels
+prophet
+xgboost
+torch

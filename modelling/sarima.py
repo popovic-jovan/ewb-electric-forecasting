@@ -23,7 +23,7 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 try:  # Support running both as a module and as a script
     from .output_utils import prepare_run_directory
-except ImportError:  # pragma: no cover - fallback when executed directly
+except ImportError:  
     from output_utils import prepare_run_directory
 
 
@@ -34,11 +34,11 @@ DEFAULT_METER_COL = "meter_ui"
 DEFAULT_OUTPUT_DIR = Path("models/sarima")
 
 DEFAULT_P = [0, 1, 2]
-DEFAULT_D = [0, 1]
+DEFAULT_D = [1]
 DEFAULT_Q = [0, 1, 2]
-DEFAULT_SP = [0, 1]
+DEFAULT_SP = [0, 1, 2]
 DEFAULT_SD = [0, 1]
-DEFAULT_SQ = [0, 1]
+DEFAULT_SQ = [0, 1, 2]
 DEFAULT_SEASONAL_PERIOD = 24
 
 
@@ -66,10 +66,7 @@ def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
 
 def compute_metrics(y_true: pd.Series, y_pred: np.ndarray) -> Dict[str, float]:
     mae = float(mean_absolute_error(y_true, y_pred))
-    try:
-        rmse = float(mean_squared_error(y_true, y_pred, squared=False))
-    except TypeError:
-        rmse = float(mean_squared_error(y_true, y_pred) ** 0.5)
+    rmse = float(mean_squared_error(y_true, y_pred) ** 0.5)
     mape = float(np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), 1e-9))) * 100.0)
     return {"MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape(y_true, y_pred)}
 

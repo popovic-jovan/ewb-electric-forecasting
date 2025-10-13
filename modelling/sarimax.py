@@ -40,7 +40,7 @@ ID_COLS_CANDIDATES = ["meter_ui", "nmi_ui"]
 
 # Default grid (sensible + not insane)
 PDQ = [(p, d, q) for p in [0, 1, 2] for d in [0, 1] for q in [0, 1, 2]]
-SPQ = [(P, D, Q) for P in [0, 1] for D in [0, 1] for Q in [0, 1, 2]]
+SPQ = [(P, D, Q) for P in [0, 1, 2] for D in [0, 1] for Q in [0, 1, 2]]
 COARSE_PDQ = PDQ[: min(8, len(PDQ))]
 COARSE_SPQ = SPQ[: min(8, len(SPQ))]
 NEIGHBOR_DELTAS = [(-1, 0, 0), (1, 0, 0), (0, 0, -1), (0, 0, 1), (0, -1, 0), (0, 1, 0)]

@@ -22,18 +22,16 @@ import json
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-
 from pandas.errors import MergeError
-
 import numpy as np
 import pandas as pd
 
 try:
     from .output_utils import prepare_run_directory
-except ImportError:  # pragma: no cover - fallback when run as script
+except ImportError:  # pragma: no cover - fallback when run as script VERY occasionally fails 
     from output_utils import prepare_run_directory
 
-# Work around local filename shadowing the installed prophet package.
+# Work around local filename shadowing the installed prophet package.(error from earlier, fixed now, but keep this here just in case)
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _removed = False
 if str(_SCRIPT_DIR) in sys.path:

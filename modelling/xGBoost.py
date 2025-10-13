@@ -1,21 +1,3 @@
-"""Train an XGBoost regression model on the engineered ML dataset.
-
-Usage examples
---------------
-python modelling/xGBoost.py --meter M1 --val_hours 168 --run_name m1
-python modelling/xGBoost.py --val_hours 336 --n_estimators 500 --eta 0.05 --run_name global
-
-The script:
-- loads `model_datasets/dataset_ml.csv` (hourly features + lags)
-- optionally filters to a single meter via `--meter`
-- holds out the final `val_hours` rows per meter for validation
-- trains an XGBoost regressor on the remaining history
-- reports MAE/RMSE/MAPE/sMAPE and saves predictions + model artefacts; optional grid search can sweep hyperparameters
-- outputs are written to a timestamped run directory under `models/xgboost` by default
-
-All feature columns must be numeric; by default the string identifier/timestamp columns are dropped.
-"""
-
 import argparse
 import json
 from pathlib import Path
@@ -58,39 +40,76 @@ def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
 
 
 def evaluate(
+
     y_true: Iterable[float],
+
     y_pred: Iterable[float],
+
     mase_scale: Optional[float] = None,
+
 ) -> Dict[str, float]:
+
     mae = mean_absolute_error(y_true, y_pred)
+
     try:
+
         rmse = mean_squared_error(y_true, y_pred, squared=False)
-    except TypeError:
+
+    except TypeError:  # compatibility with older sklearn
+
         rmse = mean_squared_error(y_true, y_pred) ** 0.5
+
     y_true_arr = np.asarray(y_true)
+
     y_pred_arr = np.asarray(y_pred)
+
     abs_true = np.abs(y_true_arr)
+
     abs_err = np.abs(y_true_arr - y_pred_arr)
+
     denom = np.maximum(abs_true, 1e-9)
+
     mape = np.mean(abs_err / denom) * 100
+
     total_actual = abs_true.sum()
+
     if total_actual <= 1e-9:
-        wape = float('nan')
+
+        wape = float("nan")
+
     else:
+
         wape = abs_err.sum() / total_actual * 100
+
     if mase_scale is not None and mase_scale > 0:
+
         mase = mae / mase_scale
+
     else:
-        mase = float('nan')
+
+        mase = float("nan")
+
     return {
-        'MAE': mae,
-        'RMSE': rmse,
-        'MAPE': mape,
-        'sMAPE': smape(y_true_arr, y_pred_arr),
-        'WAPE': wape,
-        'MASE': mase,
-        'R2': r2_score(y_true, y_pred),
+
+        "MAE": mae,
+
+        "RMSE": rmse,
+
+        "MAPE": mape,
+
+        "sMAPE": smape(y_true_arr, y_pred_arr),
+
+        "WAPE": wape,
+
+        "MASE": mase,
+
+        "R2": r2_score(y_true, y_pred),
+
     }
+
+
+
+
 
 
 def compute_mase_scale(
