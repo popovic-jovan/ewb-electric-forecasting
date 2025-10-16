@@ -351,6 +351,14 @@ def main():
     stats = validate_join(elec, weather_hourly)
     print("  Join diagnostics:", stats)
 
+    # Drop weather accumulation metadata columns that are not needed downstream.
+    drop_cols = [
+        "period_over_which_rainfall_was_measured_days",
+        "days_of_accumulation_of_maximum_temperature",
+        "days_of_accumulation_of_minimum_temperature",
+    ]
+    merged = merged.drop(columns=drop_cols, errors="ignore")
+
     # 6) Save
     merged.to_csv(OUTPUT_CSV, index=False)
     try:

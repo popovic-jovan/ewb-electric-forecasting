@@ -1,8 +1,8 @@
 """Model-specific dataset preparation pipeline.
 
 This module reads the merged electricity and weather dataset and produces
-tailored, model-ready datasets for the SARIMA, SARIMAX, XGBoost, and LSTM
-pipelines. The workflow is:
+tailored, model-ready datasets for the SARIMA, SARIMAX, XGBoost (full and
+minimal ablation), and LSTM pipelines. The workflow is:
 
 1. Apply global preprocessing (drop meter M34, parse timestamps, enforce hourly
    index, interpolate gaps).
@@ -29,8 +29,8 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 
-INPUT_CSV = Path(r"C:\Users\Owner\honours_project\merged_electricity_weather.csv")
-MODEL_DATA_DIR = Path("model_datasets")
+INPUT_CSV = Path(r"C:\Users\Owner\honours_project\datasets\merged_electricity_weather.csv")
+MODEL_DATA_DIR = Path("datasets")
 
 TARGET_COL = "delivered_value"
 USAGE_COL = "usage_kwh"
@@ -81,6 +81,8 @@ class ModelType(str, Enum):
     SARIMA = "sarima"
     SARIMAX = "sarimax"
     XGBOOST = "xgboost"
+    XGBOOST_DISCONNECT = "xgboost_disconnect"
+    XGBOOST_MINIMAL = "xgboost_minimal"
     LSTM = "lstm"
 
     @classmethod
@@ -127,7 +129,12 @@ def build_timestamp(df: pd.DataFrame) -> pd.Series:
         ),
         errors="raise",
     )
-    return ts.tz_localize(None)
+    if isinstance(ts, pd.Series):
+        tz = getattr(ts.dt, "tz", None)
+        return ts if tz is None else ts.dt.tz_localize(None)
+
+    tz = getattr(ts, "tz", None)
+    return ts if tz is None else ts.tz_localize(None)
 
 
 def detect_meter_column(df: pd.DataFrame) -> Optional[str]:
@@ -150,7 +157,7 @@ def determine_season(month: int) -> str:
 def ensure_hourly_frequency(df: pd.DataFrame, meter_col: Optional[str]) -> pd.DataFrame:
     """Resample each meter (or the whole frame) to an hourly frequency."""
     def _resample(group: pd.DataFrame) -> pd.DataFrame:
-        idx = pd.date_range(group.index.min(), group.index.max(), freq="H")
+        idx = pd.date_range(group.index.min(), group.index.max(), freq="h")
         group = group.reindex(idx)
         return group
 
@@ -185,25 +192,32 @@ def interpolate_numeric(df: pd.DataFrame, meter_col: Optional[str]) -> pd.DataFr
         )
         return interp
 
-    if meter_col:
-        return df.groupby(meter_col, group_keys=False).apply(_interp)
+    if meter_col and meter_col in df.columns:
+        pieces = []
+        for _, group in df.groupby(meter_col, sort=False):
+            pieces.append(_interp(group))
+        combined = pd.concat(pieces, axis=0)
+        combined = combined.sort_index()
+        return combined
     return _interp(df)
 
 
 def forward_fill_strings(df: pd.DataFrame, meter_col: Optional[str]) -> pd.DataFrame:
-    object_cols = df.select_dtypes(include=["object"]).columns
+    object_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
+    if meter_col and meter_col in object_cols:
+        object_cols = [col for col in object_cols if col != meter_col]
     if not len(object_cols):
         return df
 
-    def _fill(group: pd.DataFrame) -> pd.DataFrame:
-        filled = group.copy()
-        for col in object_cols:
-            filled[col] = filled[col].ffill().bfill()
-        return filled
-
-    if meter_col:
-        return df.groupby(meter_col, group_keys=False).apply(_fill)
-    return _fill(df)
+    filled = df.copy()
+    if meter_col and meter_col in df.columns:
+        filled[object_cols] = (
+            filled.groupby(meter_col)[object_cols]
+            .transform(lambda g: g.ffill().bfill())
+        )
+    else:
+        filled[object_cols] = filled[object_cols].ffill().bfill()
+    return filled
 
 
 def add_calendar_features(df: pd.DataFrame) -> None:
@@ -429,9 +443,10 @@ def prepare_sarimax_dataset(
     for lag_col in lag_features:
         features[lag_col] = df[lag_col]
 
-    feature_cols = features.columns.tolist()
     if meter_col:
+        features[meter_col] = df[meter_col]
         features = features.groupby(meter_col, group_keys=False).apply(lambda g: g.ffill().bfill())
+        features = features.drop(columns=[meter_col])
     else:
         features = features.ffill().bfill()
     features = features.fillna(0.0)
@@ -484,6 +499,8 @@ def prepare_xgboost_dataset(
     meter_col: Optional[str],
 ) -> DatasetArtefact:
     working = df.copy()
+    if meter_col and meter_col not in working.columns:
+        meter_col = None
 
     lag_cols = add_group_lags(
         working,
@@ -505,16 +522,53 @@ def prepare_xgboost_dataset(
         meter_col,
     )
 
-    # Lagged weather features
-    weather_lags = []
+    # Weather-derived features
+    weather_lags: List[str] = []
+    rain_features: List[str] = []
+    tmax_features: List[str] = []
+
     if COL_MAX_T in df.columns:
-        weather_lags.extend(add_group_lags(working, COL_MAX_T, [1, 24], meter_col, prefix="tmax"))
+        weather_lags.extend(add_group_lags(working, COL_MAX_T, [24], meter_col, prefix="tmax"))
+        tmax_roll_cols = add_group_rolling(
+            working,
+            COL_MAX_T,
+            {"tmax_mean_168h": (168, "mean")},
+            meter_col,
+        )
+        tmax_prev_cols: List[str] = []
+        for col in tmax_roll_cols:
+            prev_col = f"{col}_prevday"
+            if meter_col:
+                working[prev_col] = working.groupby(meter_col)[col].shift(24)
+            else:
+                working[prev_col] = working[col].shift(24)
+            tmax_prev_cols.append(prev_col)
+        working = working.drop(columns=tmax_roll_cols, errors="ignore")
+        tmax_features.extend(tmax_prev_cols)
+
     if COL_SOLAR in df.columns:
-        weather_lags.extend(add_group_lags(working, COL_SOLAR, [1, 24], meter_col, prefix="solar"))
+        weather_lags.extend(add_group_lags(working, COL_SOLAR, [24], meter_col, prefix="solar"))
+
+    if COL_RAIN in df.columns:
+        rain_features.extend(add_group_lags(working, COL_RAIN, [24, 72, 168], meter_col, prefix="rain"))
+        rain_roll_cols = add_group_rolling(
+            working,
+            COL_RAIN,
+            {"rain_cum_72h": (72, "sum"), "rain_cum_168h": (168, "sum")},
+            meter_col,
+        )
+        rain_prev_cols: List[str] = []
+        for col in rain_roll_cols:
+            prev_col = f"{col}_prevday"
+            if meter_col:
+                working[prev_col] = working.groupby(meter_col)[col].shift(24)
+            else:
+                working[prev_col] = working[col].shift(24)
+            rain_prev_cols.append(prev_col)
+        working = working.drop(columns=rain_roll_cols, errors="ignore")
+        rain_features.extend(rain_prev_cols)
 
     # Interactions
-    if "hour_sin" in working.columns and COL_MAX_T in working.columns:
-        working["hour_sin_tmax"] = working["hour_sin"] * working[COL_MAX_T]
     if "is_weekend" in working.columns and "CDH" in working.columns:
         working["is_weekend_CDH"] = working["is_weekend"] * working["CDH"]
 
@@ -522,7 +576,6 @@ def prepare_xgboost_dataset(
     if meter_col:
         working["meter_code"] = working[meter_col].astype("category")
         categorical_cols.append("meter_code")
-    categorical_cols.append("season")
 
     # Prepare target shifted one hour ahead
     if meter_col:
@@ -544,37 +597,45 @@ def prepare_xgboost_dataset(
         "month_sin",
         "month_cos",
         "CDH",
-        "HDH",
         COL_MAX_T,
         COL_MIN_T,
-        COL_RAIN,
-        COL_SOLAR,
         "temp_mean",
         "temp_range",
-        "rain_log1p",
-        "solar_log1p",
-        "hour_sin_tmax",
         "is_weekend_CDH",
         "is_night",
         "is_peak_5to9pm",
     ]
 
     xgboost_df = working[
-        [c for c in features_to_keep + lag_cols + rolling_cols + weather_lags + categorical_cols + ["y"] if c in working.columns]
+        [
+            c
+            for c in features_to_keep
+            + lag_cols
+            + rolling_cols
+            + weather_lags
+            + rain_features
+            + tmax_features
+            + categorical_cols
+            + ["y"]
+            if c in working.columns
+        ]
     ].copy()
 
     if meter_col and meter_col in working.columns:
         xgboost_df[meter_col] = working[meter_col]
 
-    # Handle NaNs: forward/back fill per meter then fall back to zeros
+    # Handle NaNs: forward/back fill per meter (if available)
     if meter_col:
         xgboost_df = xgboost_df.groupby(working[meter_col], group_keys=False).apply(lambda g: g.ffill().bfill())
     else:
         xgboost_df = xgboost_df.ffill().bfill()
-    xgboost_df = xgboost_df.fillna(0.0)
-
-    # One-hot encode categorical variables
-    xgboost_df = pd.get_dummies(xgboost_df, columns=[c for c in categorical_cols if c in xgboost_df.columns], drop_first=False)
+    numeric_cols = xgboost_df.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols):
+        xgboost_df.loc[:, numeric_cols] = xgboost_df[numeric_cols].fillna(0.0)
+    for col in [c for c in categorical_cols if c in xgboost_df.columns]:
+        xgboost_df[col] = xgboost_df[col].astype("object").fillna("unknown")
+    if meter_col and meter_col in xgboost_df.columns:
+        xgboost_df[meter_col] = xgboost_df[meter_col].astype("object").fillna("unknown")
 
     xgboost_df = xgboost_df.dropna(subset=["y"])
     xgboost_df = xgboost_df.reset_index()
@@ -582,12 +643,228 @@ def prepare_xgboost_dataset(
         xgboost_df = xgboost_df.rename(columns={"index": "timestamp"})
 
     output_path = MODEL_DATA_DIR / "dataset_xgboost.csv"
-    xgboost_df.to_csv(output_path, index=False)
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    xgboost_df.to_csv(tmp_path, index=False)
+    tmp_path.replace(output_path)
 
     return DatasetArtefact(
         path=output_path,
         description="Tabular feature matrix for XGBoost with lags, rolls, and calendar encodings.",
         extra={"num_features": int(xgboost_df.shape[1] - 1), "num_rows": int(len(xgboost_df))},
+    )
+
+
+def compute_future_flag(series: pd.Series, horizon: int) -> pd.Series:
+    shifted = series.shift(-1)
+    future_max = (
+        shifted[::-1]
+        .rolling(window=horizon, min_periods=1)
+        .max()[::-1]
+    )
+    return future_max.fillna(0).astype(int)
+
+
+def prepare_xgboost_minimal_dataset(
+    df: pd.DataFrame,
+    meter_col: Optional[str],
+) -> DatasetArtefact:
+    minimal = pd.DataFrame(index=df.index.copy())
+    minimal[USAGE_COL] = df[USAGE_COL]
+    minimal["hour"] = df["hour"] if "hour" in df.columns else df.index.hour
+
+    if meter_col:
+        minimal[meter_col] = df[meter_col]
+        minimal["y"] = df.groupby(meter_col)[USAGE_COL].shift(-1)
+    else:
+        minimal["y"] = df[USAGE_COL].shift(-1)
+
+    minimal = minimal.dropna(subset=["y"])
+    minimal = minimal.reset_index().rename(columns={"index": "timestamp"})
+
+    ordered_cols: List[str] = ["timestamp"]
+    if meter_col and meter_col in minimal.columns:
+        ordered_cols.append(meter_col)
+    ordered_cols.extend([USAGE_COL, "y", "hour"])
+    minimal = minimal[ordered_cols]
+
+    output_path = MODEL_DATA_DIR / "dataset_xgboost_minimal.csv"
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    minimal.to_csv(tmp_path, index=False)
+    tmp_path.replace(output_path)
+
+    return DatasetArtefact(
+        path=output_path,
+        description="Minimal XGBoost dataset with usage, hour, and next-hour target.",
+        extra={"num_rows": int(len(minimal)), "columns": ordered_cols},
+    )
+
+
+def prepare_xgboost_disconnect_dataset(
+    df: pd.DataFrame,
+    meter_col: Optional[str],
+    horizon: int = 24,
+) -> DatasetArtefact:
+    working = df.copy()
+    if meter_col and meter_col not in working.columns:
+        meter_col = None
+
+    if "power_zero" not in working.columns:
+        raise ValueError("Expected 'power_zero' column to build disconnect target.")
+
+    if meter_col:
+        future_flag = working.groupby(meter_col)["power_zero"].transform(
+            lambda s: compute_future_flag(s, horizon)
+        )
+    else:
+        future_flag = compute_future_flag(working["power_zero"], horizon)
+
+    working["disconnect_within_24h"] = future_flag
+
+    lag_cols = add_group_lags(
+        working,
+        USAGE_COL,
+        lags=[1, 2, 24, 48, 168],
+        group_key=meter_col,
+        prefix="usage",
+    )
+
+    rolling_specs = {
+        "roll_mean_3h": (3, "mean"),
+        "roll_std_24h": (24, "std"),
+        "roll_sum_168h": (168, "sum"),
+    }
+    rolling_cols = add_group_rolling(
+        working,
+        USAGE_COL,
+        {label: (win, func) for label, (win, func) in rolling_specs.items()},
+        meter_col,
+    )
+
+    weather_lags: List[str] = []
+    rain_features: List[str] = []
+    tmax_features: List[str] = []
+
+    if COL_MAX_T in df.columns:
+        weather_lags.extend(add_group_lags(working, COL_MAX_T, [24], meter_col, prefix="tmax"))
+        tmax_roll_cols = add_group_rolling(
+            working,
+            COL_MAX_T,
+            {"tmax_mean_168h": (168, "mean")},
+            meter_col,
+        )
+        tmax_prev_cols: List[str] = []
+        for col in tmax_roll_cols:
+            prev_col = f"{col}_prevday"
+            if meter_col:
+                working[prev_col] = working.groupby(meter_col)[col].shift(24)
+            else:
+                working[prev_col] = working[col].shift(24)
+            tmax_prev_cols.append(prev_col)
+        working = working.drop(columns=tmax_roll_cols, errors="ignore")
+        tmax_features.extend(tmax_prev_cols)
+
+    if COL_SOLAR in df.columns:
+        weather_lags.extend(add_group_lags(working, COL_SOLAR, [24], meter_col, prefix="solar"))
+
+    if COL_RAIN in df.columns:
+        rain_features.extend(add_group_lags(working, COL_RAIN, [24, 72, 168], meter_col, prefix="rain"))
+        rain_roll_cols = add_group_rolling(
+            working,
+            COL_RAIN,
+            {"rain_cum_72h": (72, "sum"), "rain_cum_168h": (168, "sum")},
+            meter_col,
+        )
+        rain_prev_cols: List[str] = []
+        for col in rain_roll_cols:
+            prev_col = f"{col}_prevday"
+            if meter_col:
+                working[prev_col] = working.groupby(meter_col)[col].shift(24)
+            else:
+                working[prev_col] = working[col].shift(24)
+            rain_prev_cols.append(prev_col)
+        working = working.drop(columns=rain_roll_cols, errors="ignore")
+        rain_features.extend(rain_prev_cols)
+
+    categorical_cols: List[str] = []
+    if meter_col:
+        working["meter_code"] = working[meter_col].astype("category")
+        categorical_cols.append("meter_code")
+
+    features_to_keep = [
+        USAGE_COL,
+        "power_zero",
+        "daily_energy_zero",
+        "hour",
+        "day_of_week",
+        "month",
+        "is_weekend",
+        "is_holiday_wa",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "month_sin",
+        "month_cos",
+        "is_night",
+        "is_peak_5to9pm",
+        "CDH",
+        COL_MAX_T,
+        COL_MIN_T,
+        "temp_mean",
+        "temp_range",
+    ]
+
+    columns = [
+        c
+        for c in features_to_keep
+        + lag_cols
+        + rolling_cols
+        + weather_lags
+        + rain_features
+        + tmax_features
+        + categorical_cols
+        + ["disconnect_within_24h"]
+        if c in working.columns
+    ]
+
+    xgb_disc = working[columns].copy()
+    if meter_col and meter_col in working.columns:
+        xgb_disc[meter_col] = working[meter_col]
+
+    if meter_col and meter_col in xgb_disc.columns:
+        xgb_disc = xgb_disc.groupby(xgb_disc[meter_col], group_keys=False).apply(lambda g: g.ffill().bfill())
+    else:
+        xgb_disc = xgb_disc.ffill().bfill()
+
+    numeric_cols = xgb_disc.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols):
+        xgb_disc.loc[:, numeric_cols] = xgb_disc[numeric_cols].fillna(0.0)
+
+    for col in categorical_cols:
+        if col in xgb_disc.columns:
+            xgb_disc[col] = xgb_disc[col].astype("object").fillna("unknown")
+    if meter_col and meter_col in xgb_disc.columns:
+        xgb_disc[meter_col] = xgb_disc[meter_col].astype("object").fillna("unknown")
+
+    xgb_disc = xgb_disc.dropna(subset=["disconnect_within_24h"])
+    xgb_disc["disconnect_within_24h"] = xgb_disc["disconnect_within_24h"].astype(int)
+
+    xgb_disc = xgb_disc.reset_index()
+    if "index" in xgb_disc.columns and "timestamp" not in xgb_disc.columns:
+        xgb_disc = xgb_disc.rename(columns={"index": "timestamp"})
+
+    output_path = MODEL_DATA_DIR / "dataset_xgboost_disconnect.csv"
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    xgb_disc.to_csv(tmp_path, index=False)
+    tmp_path.replace(output_path)
+
+    return DatasetArtefact(
+        path=output_path,
+        description=f"Classification dataset for predicting disconnection within {horizon} hours.",
+        extra={
+            "num_features": int(xgb_disc.shape[1] - 1),
+            "num_rows": int(len(xgb_disc)),
+        },
     )
 
 
@@ -723,7 +1000,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=str,
         default=["all"],
-        help="List of model types to build (sarima, sarimax, xgboost, lstm) or 'all'.",
+        help="List of model types to build (sarima, sarimax, xgboost, xgboost_disconnect, xgboost_minimal, lstm) or 'all'.",
     )
     parser.add_argument(
         "--lstm-lookback",
@@ -762,6 +1039,9 @@ def main() -> None:
             dropped_features_report[model.value] = artefact.extra.get("dropped_multicollinear", []) if artefact.extra else []
         elif model is ModelType.XGBOOST:
             artefacts.append(prepare_xgboost_dataset(df, meter_col))
+            dropped_features_report[model.value] = []
+        elif model is ModelType.XGBOOST_MINIMAL:
+            artefacts.append(prepare_xgboost_minimal_dataset(df, meter_col))
             dropped_features_report[model.value] = []
         elif model is ModelType.LSTM:
             artefacts.append(prepare_lstm_dataset(df, meter_col, lookback=args.lstm_lookback))

@@ -8,6 +8,8 @@ from sklearn.model_selection import ParameterGrid
 import joblib
 import numpy as np
 import pandas as pd
+import warnings
+from pandas.api.types import CategoricalDtype
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 try:
@@ -22,13 +24,29 @@ try:
 except ImportError:  # pragma: no cover - fallback when run as script
     from output_utils import prepare_run_directory
 
-DATA_FILE = "model_datasets/dataset_xgboost.csv"
+DATA_FILE = "datasets/dataset_xgboost.csv"
 TARGET = "y"
 TIMESTAMP = "timestamp"
 METER_COLUMN = "meter_ui"
 DEFAULT_OUTPUT_DIR = Path("models/xgboost")
 
-DEFAULT_DROP_COLS = {"timestamp", "meter_ui", "nmi_ui"}
+DEFAULT_DROP_COLS = {
+    "timestamp",
+    "meter_ui",
+   # "maximum_temperature_degree_c",
+    #"maximum_temperature_degree_c_tmax_mean_168h_prevday",
+   # "minimum_temperature_degree_c",
+  #   "temp_mean",
+#    "temp_range",
+#    "CDH",
+#    "solar_lag_24",
+     "rain_lag_24",
+ "rain_lag_72",
+# "rain_lag_168",
+ "rainfall_amount_millimetres_rain_cum_72h_prevday",
+#"rainfall_amount_millimetres_rain_cum_168h_prevday",
+}
+
 
 
 def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
@@ -40,13 +58,9 @@ def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
 
 
 def evaluate(
-
     y_true: Iterable[float],
-
     y_pred: Iterable[float],
-
     mase_scale: Optional[float] = None,
-
 ) -> Dict[str, float]:
 
     mae = mean_absolute_error(y_true, y_pred)
@@ -177,7 +191,14 @@ def build_features(
 ) -> Tuple[pd.DataFrame, pd.Series]:
     drop_set = set(drop_columns)
     available_drop = [col for col in drop_set if col in df.columns]
-    X = df.drop(columns=available_drop + [target_col])
+    always_drop = {"timestamp"}
+    extra_drop = [col for col in always_drop if col in df.columns]
+    X = df.drop(columns=available_drop + extra_drop + [target_col])
+
+    datetime_cols = X.select_dtypes(include=["datetime", "datetimetz"]).columns
+    if len(datetime_cols):
+        X = X.drop(columns=list(datetime_cols))
+
     y = df[target_col]
     return X, y
 
@@ -191,15 +212,17 @@ def train_val_split(
     if val_hours <= 0:
         raise ValueError("val_hours must be positive.")
     if meter_col and meter_col in df.columns:
-        parts = []
-        for _, group in df.groupby(meter_col):
+        train_parts = []
+        val_parts = []
+        for _, group in df.groupby(meter_col, sort=False):
             if len(group) <= val_hours:
                 raise ValueError(
                     f"Meter '{group.iloc[0][meter_col]}' has only {len(group)} rows; cannot hold out {val_hours} validation hours."
                 )
-            parts.append(group.iloc[:-val_hours])
-        train_df = pd.concat(parts, ignore_index=True)
-        val_df = df.groupby(meter_col, group_keys=False).apply(lambda g: g.iloc[-val_hours:]).reset_index(drop=True)
+            train_parts.append(group.iloc[:-val_hours])
+            val_parts.append(group.iloc[-val_hours:])
+        train_df = pd.concat(train_parts, ignore_index=True)
+        val_df = pd.concat(val_parts, ignore_index=True)
     else:
         if len(df) <= val_hours:
             raise ValueError("Dataset too small for requested val_hours.")
@@ -213,30 +236,84 @@ def train_model(
     y_train: pd.Series,
     X_val: pd.DataFrame,
     y_val: pd.Series,
-    params: Dict[str, float],
+    params: Dict[str, object],
 ) -> xgb.XGBRegressor:
-    cfg = params.copy()
-    model = xgb.XGBRegressor(
-        objective="reg:squarederror",
-        tree_method=cfg.pop("tree_method", "hist"),
-        n_estimators=int(cfg.pop("n_estimators", 500)),
-        learning_rate=float(cfg.pop("eta", 0.05)),
-        max_depth=int(cfg.pop("max_depth", 6)),
-        subsample=float(cfg.pop("subsample", 0.8)),
-        colsample_bytree=float(cfg.pop("colsample_bytree", 0.8)),
-        reg_lambda=float(cfg.pop("reg_lambda", 1.0)),
-        reg_alpha=float(cfg.pop("reg_alpha", 0.0)),
-        min_child_weight=float(cfg.pop("min_child_weight", 1.0)),
-        random_state=int(cfg.pop("random_state", 42)),
-        **cfg,
-    )
-    model.fit(
-        X_train,
-        y_train,
-        eval_set=[(X_train, y_train), (X_val, y_val)],
-        verbose=False,
-    )
-    return model
+    train_object_cols = X_train.select_dtypes(include=["object", "string"]).columns
+    for col in train_object_cols:
+        train_cat = X_train[col].astype("category")
+        if col in X_val.columns:
+            val_cat = X_val[col].astype("category")
+            categories = train_cat.cat.categories.union(val_cat.cat.categories)
+            X_train[col] = train_cat.cat.set_categories(categories)
+            X_val[col] = val_cat.cat.set_categories(categories)
+        else:
+            X_train[col] = train_cat
+
+    extra_val_object_cols = [
+        col for col in X_val.select_dtypes(include=["object", "string"]).columns if col not in train_object_cols
+    ]
+    for col in extra_val_object_cols:
+        X_val[col] = X_val[col].astype("category")
+
+    categorical_cols = [
+        col for col in X_train.columns if isinstance(X_train[col].dtype, CategoricalDtype)
+    ]
+
+    def _build_model(cfg: Dict[str, object]) -> xgb.XGBRegressor:
+        local = cfg.copy()
+        tree_method = local.pop("tree_method", "hist")
+        device = local.pop("device", None)
+        if tree_method == "gpu_hist":
+            tree_method = "hist"
+            if device != "cpu":
+                device = "cuda"
+
+        model_kwargs = dict(
+            objective="reg:squarederror",
+            tree_method=tree_method,
+            n_estimators=int(local.pop("n_estimators", 500)),
+            learning_rate=float(local.pop("eta", 0.05)),
+            max_depth=int(local.pop("max_depth", 6)),
+            subsample=float(local.pop("subsample", 0.8)),
+            colsample_bytree=float(local.pop("colsample_bytree", 0.8)),
+            reg_lambda=float(local.pop("reg_lambda", 1.0)),
+            reg_alpha=float(local.pop("reg_alpha", 0.0)),
+            min_child_weight=float(local.pop("min_child_weight", 1.0)),
+            random_state=int(local.pop("random_state", 42)),
+            **local,
+        )
+        if device:
+            model_kwargs["device"] = device
+        if categorical_cols:
+            model_kwargs["enable_categorical"] = True
+        return xgb.XGBRegressor(**model_kwargs)
+
+    try:
+        model = _build_model(params)
+        model.fit(
+            X_train,
+            y_train,
+            eval_set=[(X_train, y_train), (X_val, y_val)],
+            verbose=False,
+        )
+        return model
+    except xgb.core.XGBoostError as exc:
+        if params.get("device") == "cuda":
+            warnings.warn(
+                f"GPU training failed with error '{exc}'. Falling back to CPU (device='cpu').",
+                RuntimeWarning,
+            )
+            params["tree_method"] = "hist"
+            params["device"] = "cpu"
+            model = _build_model(params)
+            model.fit(
+                X_train,
+                y_train,
+                eval_set=[(X_train, y_train), (X_val, y_val)],
+                verbose=False,
+            )
+            return model
+        raise
 
 
 def run_grid_search(
@@ -244,10 +321,10 @@ def run_grid_search(
     y_train: pd.Series,
     X_val: pd.DataFrame,
     y_val: pd.Series,
-    base_params: Dict[str, float],
+    base_params: Dict[str, object],
     grid_options: Dict[str, List[float]],
     mase_scale: Optional[float],
-) -> Tuple[xgb.XGBRegressor, Dict[str, float], Dict[str, float], List[Dict[str, object]]]:
+) -> Tuple[xgb.XGBRegressor, Dict[str, object], Dict[str, float], List[Dict[str, object]]]:
     search_space = {k: v for k, v in grid_options.items() if v}
     if not search_space:
         raise ValueError("Grid search requested but no grid_* values were provided.")
@@ -261,10 +338,14 @@ def run_grid_search(
     for combo in ParameterGrid(search_space):
         trial_params = base_params.copy()
         trial_params.update({k: combo[k] for k in combo})
+        if trial_params.get("tree_method") == "gpu_hist":
+            trial_params["tree_method"] = "hist"
+            if trial_params.get("device", base_params.get("device")) != "cpu":
+                trial_params["device"] = "cuda"
         model = train_model(X_train, y_train, X_val, y_val, trial_params)
         preds = model.predict(X_val)
         metrics = evaluate(y_val, preds, mase_scale=mase_scale)
-        results.append({"params": trial_params, "metrics": metrics})
+        results.append({"params": trial_params.copy(), "metrics": metrics})
         score = metrics["RMSE"]
         if score < best_score:
             best_score = score
@@ -317,7 +398,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reg_lambda", type=float, default=1.0, help="L2 regularisation term on weights.")
     parser.add_argument("--reg_alpha", type=float, default=0.0, help="L1 regularisation term on weights.")
     parser.add_argument("--min_child_weight", type=float, default=1.0, help="Minimum sum of instance weight (hessian) needed in a child.")
-    parser.add_argument("--tree_method", default="hist", help="Tree construction algorithm (e.g. hist, gpu_hist).")
+    parser.add_argument(
+        "--tree_method",
+        default="hist",
+        help="Tree construction algorithm (default 'hist').",
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda",
+        help="XGBoost device (e.g., 'cuda' or 'cpu'). Default uses CUDA with automatic CPU fallback.",
+    )
     parser.add_argument("--random_state", type=int, default=42, help="Random seed.")
     parser.add_argument("--dropna_target", action="store_true", help="Drop rows where the target is NA before splitting.")
     parser.add_argument("--mase_seasonality", type=int, default=1, help="Seasonality period for MASE scaling (1 = naive benchmark).")
@@ -336,6 +426,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    args.tree_method = (args.tree_method or "hist").lower()
+    args.device = (args.device or "cuda").lower()
+    if args.tree_method == "gpu_hist":
+        warnings.warn(
+            "XGBoost 2.0 deprecates tree_method='gpu_hist'; using tree_method='hist' with device='cuda'.",
+            RuntimeWarning,
+        )
+        args.tree_method = "hist"
+        if args.device != "cpu":
+            args.device = "cuda"
+    if args.device == "auto":
+        args.device = "cuda"
 
     run_dir = prepare_run_directory(
         args.output_dir,
@@ -363,6 +466,28 @@ def main() -> None:
     X_train, y_train = build_features(train_df, args.target, args.drop_columns)
     X_val, y_val = build_features(val_df, args.target, args.drop_columns)
 
+    def _convert_categoricals(train_df: pd.DataFrame, val_df: pd.DataFrame) -> None:
+        object_cols = train_df.select_dtypes(include=["object", "string"]).columns
+        for col in object_cols:
+            train_cat = train_df[col].astype("category")
+            if col in val_df.columns:
+                val_cat = val_df[col].astype("category")
+                categories = train_cat.cat.categories.union(val_cat.cat.categories)
+                train_df[col] = train_cat.cat.set_categories(categories)
+                val_df[col] = val_cat.cat.set_categories(categories)
+            else:
+                train_df[col] = train_cat
+
+        extra_val_cols = [
+            col
+            for col in val_df.select_dtypes(include=["object", "string"]).columns
+            if col not in object_cols
+        ]
+        for col in extra_val_cols:
+            val_df[col] = val_df[col].astype("category")
+
+    _convert_categoricals(X_train, X_val)
+
     meter_for_scale = args.meter_column if (args.meter is None and args.meter_column in train_df.columns) else None
     mase_scale = compute_mase_scale(
         train_df,
@@ -381,6 +506,7 @@ def main() -> None:
         "reg_alpha": args.reg_alpha,
         "min_child_weight": args.min_child_weight,
         "tree_method": args.tree_method,
+        "device": args.device,
         "random_state": args.random_state,
     }
 
@@ -419,6 +545,7 @@ def main() -> None:
         )
         val_pred = model.predict(X_val)
         metrics = evaluate(y_val, val_pred, mase_scale=mase_scale)
+        best_params_used = params.copy()
 
     predictions = val_df[[args.timestamp]].copy()
     predictions["y_true"] = y_val.values
