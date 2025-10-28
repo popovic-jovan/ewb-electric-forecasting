@@ -1,4 +1,4 @@
-"""Utilities for managing model output directories."""
+"""Utilities for preparing model output directories."""
 
 from __future__ import annotations
 
@@ -19,18 +19,7 @@ def prepare_run_directory(
     *,
     timestamp: bool = True,
 ) -> Path:
-    """Create and return a unique directory for a model run.
-
-    Parameters
-    ----------
-    base_dir:
-        Root directory where runs should be stored. It is created if missing.
-    run_name:
-        Optional human-friendly label (e.g., "experiment_a").
-    timestamp:
-        When True (default) append a ``YYYYMMDD-HHMMSS`` suffix so repeated runs
-        do not overwrite each other.
-    """
+    """Create and return a unique directory for a model run."""
 
     base_path = Path(base_dir)
     base_path.mkdir(parents=True, exist_ok=True)
@@ -41,11 +30,7 @@ def prepare_run_directory(
     if timestamp:
         parts.append(datetime.now().strftime("%Y%m%d-%H%M%S"))
 
-    if parts:
-        folder = "_".join(parts)
-    else:
-        folder = "run"
-
+    folder = "_".join(parts) if parts else "run"
     run_path = base_path / folder
     counter = 1
     while run_path.exists():
