@@ -80,7 +80,8 @@ db.sqlite3-journal
 
 # Project-specific artifacts
 data/
-models/
+/models/
+!src/core/models/
 mlruns/
 pycache/
 .ipynb_checkpoints/

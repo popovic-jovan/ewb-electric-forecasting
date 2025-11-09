@@ -73,8 +73,8 @@ features:
   holiday_flags: true
 
 pricing:
-  cost_per_kwh: 0.315
-  daily_supply_charge: 1.322
+  cost_per_kwh: 0.323719
+  daily_supply: 1.605
   usage_warning_threshold_kwh: 2.2
 
 search_space:
