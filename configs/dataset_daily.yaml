@@ -2,10 +2,13 @@ raw_csv: "datasets/original_data.csv"
 time_col: "AGGREGATE_DATE"
 target_col: "DELIVERED_VALUE"
 id_col: "METER_UI"
-freq: "h"
-train_end: "2023-02-24 23:00:00"
-val_end: "2023-03-24 23:00:00"
-test_end: "2023-04-24 23:00:00"
+freq: "D"
+aggregate_freq: "D"
+aggregate_per_entity: true
+entity_aggregation_method: sum
+train_end: "2023-02-24"
+val_end: "2023-03-24"
+test_end: "2023-04-24"
 clip_low_pct: 0.5
 clip_high_pct: 99.5
 exclude_ids:
@@ -36,4 +39,3 @@ special_days:
     - "2023-04-07"
     - "2023-04-09"
     - "2023-04-10"
-

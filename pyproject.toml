@@ -1,0 +1,14 @@
+# TODO: Define project metadata, dependencies, and tooling configuration.
+
+[project]
+name = "honours-project"
+version = "0.0.0"
+description = "TODO: replace with a short project description."
+requires-python = ">=3.10"
+dependencies = [
+    # TODO: list runtime dependencies.
+]
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"

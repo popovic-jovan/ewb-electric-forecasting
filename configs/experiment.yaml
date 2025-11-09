@@ -1,0 +1,14 @@
+seed: 1873714973
+features:
+  lags: [1, 24, 168]
+  rolling:
+    windows: [24, 168]
+    stats: ["mean", "std"]
+  calendar: ["hour", "dayofweek"]
+model_name: "xgboost"
+artifacts_dir: "models"
+sarimax:
+  model_cfg_path: "configs/model/sarimax.yaml"
+  optimize_metric: "WAPE"
+  artifacts_dir: "models"
+  outputs_dir: "outputs"

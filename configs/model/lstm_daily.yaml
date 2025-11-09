@@ -1,0 +1,14 @@
+dataset_mode: raw
+
+# Model architecture / training
+window: 14          # lookback days
+hidden_size: 64
+num_layers: 2
+dropout: 0.1
+epochs: 40
+learning_rate: 0.001
+batch_size: 64
+device: auto
+
+# Evaluation / batching tweaks
+eval_batch_size: 128

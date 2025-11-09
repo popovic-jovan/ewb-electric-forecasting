@@ -1,0 +1,95 @@
+dataset_mode: raw  # options: aggregated (mean profile) or raw (per-meter rows)
+
+params: {
+    "learning_rate": 0.0624277748302201,
+    "min_child_weight": 9.66732270100256,
+    "subsample": 0.760311644277701,
+    "colsample_bytree": 0.5314104278390103,
+    "gamma": 0.008445862904272529,
+    "reg_alpha": 0.2640966502893733,
+    "reg_lambda": 1.2017296634637185,
+    "max_bin": 349,
+    "grow_policy": "depthwise",
+    "max_depth": 6,
+    "objective": "reg:squarederror",
+    "tree_method": "hist",
+    "predictor": "auto",
+    "n_estimators": 5000,
+    "verbosity": 0,
+    "random_state": 42
+  }
+
+# "params": {
+#     "learning_rate": 0.015303052466978682,
+#     "min_child_weight": 7.807654600523353,
+#     "subsample": 0.5504412353791768,
+#     "colsample_bytree": 0.6015927877114076,
+#     "gamma": 3.4805866792867013,
+#     "reg_alpha": 0.20478776930590603,
+#     "reg_lambda": 0.5990906527951269,
+#     "max_bin": 503,
+#     "grow_policy": "depthwise",
+#     "max_depth": 3,
+#     "objective": "reg:squarederror",
+#     "tree_method": "hist",
+#     "predictor": "auto",
+#     "n_estimators": 5000,
+#     "verbosity": 0,
+#     "random_state": 42
+#   }
+
+# "params": {
+#     "learning_rate": 0.04627396459774353,
+#     "min_child_weight": 8.082722666670222,
+#     "subsample": 0.8046299781052562,
+#     "colsample_bytree": 0.786212878798757,
+#     "gamma": 0.023700598265448125,
+#     "reg_alpha": 0.4138936297287702,
+#     "reg_lambda": 1.484469062652859,
+#     "max_bin": 369,
+#     "grow_policy": "depthwise",
+#     "max_depth": 10,
+#     "objective": "reg:squarederror",
+#     "tree_method": "hist",
+#     "predictor": "auto",
+#     "n_estimators": 5000,
+#     "verbosity": 0,
+#     "random_state": 42
+#   }
+
+fit:
+  early_stopping_rounds: 200
+
+features:
+  calendar: true
+  cyclic: true
+  fourier_daily_K: 0
+  fourier_weekly_K: 2
+  target_lags: [1, 24, 168]
+  rolling:
+    mean: [24, 168]
+    std: []
+    diff_to_lag: 1
+  holiday_flags: true
+
+pricing:
+  cost_per_kwh: 0.315
+  daily_supply_charge: 1.322
+  usage_warning_threshold_kwh: 2.2
+
+search_space:
+  max_depth: [4, 6, 8]
+  learning_rate: [0.05, 0.1]
+  subsample: [0.8, 1.0]
+
+tuning:
+  n_trials: 50
+  n_trials_final: 150
+  early_stopping_rounds: 200
+  cv_folds: 5
+  cv_horizon_hours: 168
+  cv_gap_hours: 24
+  holdout_hours: 168
+  seed: 42
+  n_jobs: 1
+  use_gpu: true

@@ -1,0 +1,11 @@
+prophet_params:
+  seasonality_mode: additive
+  yearly_seasonality: false
+  weekly_seasonality: true
+  daily_seasonality: true
+  changepoint_prior_scale: 0.02
+  seasonality_prior_scale: 5.0
+tune_grid:
+  changepoint_prior_scale: [0.02, 0.05, 0.1, 0.2]
+  seasonality_prior_scale: [2.5, 5.0, 10.0, 15.0]
+  weekly_seasonality: [true, false]

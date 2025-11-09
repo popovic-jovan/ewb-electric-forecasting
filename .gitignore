@@ -77,3 +77,14 @@ local_settings.py
 # SQLite / lightweight DB files
 db.sqlite3
 db.sqlite3-journal
+
+# Project-specific artifacts
+data/
+models/
+mlruns/
+pycache/
+.ipynb_checkpoints/
+outputs/
+data/raw/
+data/interim/
+data/processed/

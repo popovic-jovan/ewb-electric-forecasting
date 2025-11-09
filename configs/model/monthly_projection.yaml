@@ -1,0 +1,6 @@
+dataset_mode: raw  # options: aggregated | raw
+observation:
+  min_days: 1          # require at least a week of data before projecting
+  max_days: 4         # cap observations to mimic month-to-date projections
+  require_month_start: true
+min_actual_coverage: 0.95  # only evaluate months with ~full actual data

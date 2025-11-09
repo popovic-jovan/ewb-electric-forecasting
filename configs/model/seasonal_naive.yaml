@@ -1,0 +1,2 @@
+dataset_mode: aggregated  # options: aggregated | raw
+seasonal_period: 24

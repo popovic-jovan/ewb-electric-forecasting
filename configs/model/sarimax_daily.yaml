@@ -1,0 +1,36 @@
+dataset_mode: raw
+trend: "c"
+use_log1p: false
+seasonal_period: 7
+
+features:
+  calendar: true
+  cyclic: true
+  fourier_daily_K: 0
+  fourier_weekly_K: 2
+  target_lags: [1, 7, 14]
+  rolling:
+    mean: [7, 14]
+    std: []
+    diff_to_lag: 7
+  holiday_flags: true
+  drop_columns:
+    - cal_hour
+    - cyc_hour_sin
+    - cyc_hour_cos
+    - cal_dayofweek
+    - cal_is_weekend
+    - is_public_holiday
+    - is_school_holiday
+    - public_holiday_run_hours
+    - school_holiday_run_hours
+    - any_holiday_run_hours
+
+search:
+  p: [0, 1, 2]
+  d: [0, 1]
+  q: [0, 1, 2]
+  P: [0, 1]
+  D: [0, 1]
+  Q: [0, 1]
+  seasonal: true

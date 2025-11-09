@@ -1,0 +1,2 @@
+dataset_mode: raw
+seasonal_period: 7  # repeat value from one week ago (daily data)

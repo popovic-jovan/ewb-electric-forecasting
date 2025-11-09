@@ -1,0 +1,62 @@
+dataset_mode: raw
+
+params: {
+    "learning_rate": 0.05,
+    "min_child_weight": 5.0,
+    "subsample": 0.9,
+    "colsample_bytree": 0.8,
+    "gamma": 0.0,
+    "reg_alpha": 0.2,
+    "reg_lambda": 1.0,
+    "max_bin": 256,
+    "grow_policy": "depthwise",
+    "max_depth": 5,
+    "objective": "reg:squarederror",
+    "tree_method": "hist",
+    "predictor": "auto",
+    "n_estimators": 4000,
+    "verbosity": 0,
+    "random_state": 42
+  }
+
+fit:
+  early_stopping_rounds: 200
+
+features:
+  calendar: true
+  cyclic: true
+  fourier_daily_K: 0
+  fourier_weekly_K: 2
+  target_lags: [1, 7, 14, 28]
+  rolling:
+    mean: [7, 14, 28]
+    std: []
+    diff_to_lag: 7
+  holiday_flags: true
+  drop_columns:
+    - cal_hour
+    - cyc_hour_sin
+    - cyc_hour_cos
+
+pricing:
+  cost_per_kwh: 0.315
+  daily_supply_charge: 1.322
+  usage_warning_threshold_kwh: 2.2
+
+search_space:
+  max_depth: [4, 6, 8]
+  learning_rate: [0.03, 0.08]
+  subsample: [0.7, 1.0]
+  colsample_bytree: [0.6, 1.0]
+
+tuning:
+  n_trials: 40
+  n_trials_final: 120
+  early_stopping_rounds: 200
+  cv_folds: 5
+  cv_horizon_hours: 336  # 14 days
+  cv_gap_hours: 24
+  holdout_hours: 336
+  seed: 42
+  n_jobs: 1
+  use_gpu: true

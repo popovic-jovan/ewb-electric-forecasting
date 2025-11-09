@@ -1,0 +1,34 @@
+trend: "n"
+use_log1p: false
+seasonal_period: 24
+
+features:
+  calendar: true
+  cyclic: true
+  fourier_daily_K: 0
+  fourier_weekly_K: 2
+  target_lags: []
+  rolling:
+    mean: []
+    std: []
+  drop_columns:
+    - cal_month
+    - cal_dayofyear
+    - cyc_dow_sin
+    - cyc_dow_cos
+    - is_school_holiday
+    - cal_is_weekend
+    - cal_dayofweek
+    - cal_hour
+    - public_holiday_run_hours
+    - any_holyday_run_hours
+
+
+search:
+  p: [0, 1, 2]
+  d: [0]
+  q: [0, 1, 2]
+  P: [0, 1]
+  D: [0]
+  Q: [0, 1]
+  seasonal: true

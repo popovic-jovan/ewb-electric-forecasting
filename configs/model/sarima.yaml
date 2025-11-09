@@ -1,0 +1,13 @@
+trend: "c"
+use_log1p: false
+seasonal_period: 24
+
+
+search:
+  p: [2]
+  d: [0]
+  q: [2]
+  P: [1]
+  D: [0]
+  Q: [1]
+  seasonal: true

@@ -9,3 +9,9 @@ statsmodels
 prophet
 xgboost
 torch
+pyyaml
+mlflow
+joblib
+tqdm
+optuna
+pytest
