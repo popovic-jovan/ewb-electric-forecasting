@@ -2,69 +2,105 @@
 
 Unified experimentation workspace for energy forecasting models.
 
-## Quick Start
+## Data Requirements
 
-Train a model (default outputs go to `models/<name>/`):
+- Always work off the **`source_table` sheet** from the Mowanjum dataset. This sheet already contains the aligned load and weather features expected by the pipelines.
+- Point `DATA_PATH` (in the notebooks or CLI) to either the raw Excel sheet exported as CSV/Parquet or to a derivative file that preserves the same schema.
 
-```bash
-python apps/cli.py train --model xgboost
-```
+## Training & Running Models
 
-Speed up iteration with a reduced configuration:
+The unified CLI (`apps/cli.py`) controls training, evaluation, prediction, and tuning for every model.
 
-```bash
-python apps/cli.py train --model sarimax --quick
-```
-
-Inspect available models:
+### Train a single model
 
 ```bash
-python apps/cli.py list-models
+python apps/cli.py train --model <model-name>
 ```
 
-Hyper-parameter tuning:
+Available model slugs: `xgboost`, `sarimax`, `sarima`, `prophet`, `lstm`, plus any experimental entries defined under `configs/model/`.
+
+Add `--quick` to reduce history length and grid sizes for rapid iteration.
+
+### Train every model
 
 ```bash
-python apps/cli.py tune --model sarima --tune-config configs/model/sarima.yaml
+for model in xgboost sarimax sarima prophet lstm; do
+  python apps/cli.py train --model "$model"
+done
 ```
 
-Generate forecasts from a saved checkpoint:
+All outputs (checkpoints, metrics, tuning traces) land in `models/<model>/`.
+
+### Generate forecasts
 
 ```bash
 python apps/cli.py predict \
-  --model prophet \
-  --checkpoint models/prophet/artifacts/prophet_model.json \
-  --data path/to/recent_observations.csv \
+  --model xgboost \
+  --checkpoint models/xgboost/artifacts/best.ckpt \
+  --data data/latest_observations.csv \
   --output forecasts.csv
 ```
 
-## Streamlit Dashboard
+## Tuning & Grid Search
 
-Launch the interactive UI to review metrics and produce live forecasts:
+The CLI exposes a consistent interface for sweeps. Config files under `configs/model/` define default search spaces; supply overrides for custom grids.
+
+```bash
+python apps/cli.py tune \
+  --model sarima \
+  --tune-config configs/model/sarima.yaml \
+  --max-trials 50
+```
+
+To run full grid or Bayesian searches for *all* models:
+
+```bash
+for model in xgboost sarimax sarima prophet lstm; do
+  python apps/cli.py tune --model "$model" --max-trials 75
+done
+```
+
+`--quick` can also be combined with `tune` to sanity-check the pipeline before launching long searches.
+
+## Streamlit Apps
+
+### analytics dashboard (`apps/ui/app.py`)
 
 ```bash
 streamlit run apps/ui/app.py
 ```
 
-The dashboard looks for trained checkpoints under `models/<model>/artifacts`, displays the latest reports, and lets you upload fresh CSV data for on-demand predictions.
+Shows the latest experiment metrics, plots feature diagnostics, and lets you upload CSVs for ad-hoc predictions. The app auto-discovers checkpoints under `models/<model>/artifacts`.
+
+### live forecasting (`apps/ui/live.py`)
+
+```bash
+streamlit run apps/ui/live.py -- \
+  --model xgboost \
+  --checkpoint models/xgboost/artifacts/best.ckpt
+```
+
+This Streamlit surface streams predictions from `src/core/serving/live.py`, letting you pick a trained model and visualize near real-time forecasts while uploading new readings. Use it during demos or for lightweight monitoring without spinning up the full analytics dashboard.
 
 ## Project Structure (selected)
 
 ```
 apps/
   cli.py        # unified CLI for train/tune/predict
-  ui/app.py     # Streamlit dashboard
+  ui/app.py     # analytics dashboard
+  ui/live.py    # live forecasting Streamlit entrypoint
 configs/
-  model/        # per-model configuration files
+  model/        # per-model configuration & tuning grids
 models/         # generated artifacts, metrics, tuning studies
 src/core/
   data/         # aggregation utilities
   models/       # model implementations (xgboost, sarimax, sarima, prophet, lstm)
   pipelines/    # orchestration layers for train/tune/predict
+  serving/      # live inference helpers (used by live.py)
 ```
 
 ## Notes
 
-- All models operate on the aggregated load series defined in `configs/dataset.yaml`.
+- All models expect the preprocessed `source_table` schema; avoid mixing multiple sheets during training.
 - `--quick` trims search grids and training history to drastically cut runtime during development.
 - Metric reports, predictions, and tuning summaries are written alongside each model inside `models/<name>/`.
